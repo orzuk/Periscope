@@ -2,7 +2,9 @@ import numpy as np
 import glob
 import os
 import argparse
+import traceback
 import subprocess
+import sys
 
 
 # ############# #
@@ -48,49 +50,71 @@ def run(args):
     pdb_files = glob.glob(os.path.join(args.pdb_dir, "*.pdb"))
 
     for idx, f in enumerate(pdb_files):
-        print("processing file " + str(idx + 1) + " of " + str(len(pdb_files)))
+        try:
+            print("processing file " + f + " - " + str(idx + 1) + " of " + str(len(pdb_files)))
 
-        cmd = os.path.join(".", "distances") + " " + f
+            cmd = os.path.join(".", "distances") + " " + f
 
-        # Run the distances program.
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
+            # Run the distances program.
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
 
-        # Get the distances program output.
-        stdout, err = p.communicate()
+            # Get the distances program output.
+            stdout, err = p.communicate()
 
-        stdout = stdout.decode()
-        lines = stdout.splitlines()
-        # Create a numpy 2d martix from the distances program output.
-        raw_data = np.array([ x.split(' ') for x in lines ], dtype="float64")
+            stdout = stdout.decode()
+            lines = stdout.splitlines()
 
-        # print("matrix shape: " + str(raw_data.shape))
+            i_indices_vec = np.empty(len(lines), dtype = np.int32)
+            j_indices_vec = np.empty(len(lines), dtype = np.int32)
 
-        raw_data_output_fname = os.path.join(args.csv_out_dir, os.path.basename(f).split('.')[0] + "_raw_data.csv")
+            for idx, line in enumerate(lines):
+                i_indices_vec[idx] = line.split(' ')[0]
 
-        # Save the raw output to CSV format.
-        np.savetxt(raw_data_output_fname, raw_data, delimiter=",", fmt="%.6f")
+            for idx, line in enumerate(lines):
+                j_indices_vec[idx] = line.split(' ')[1]
 
-        nrows = len(np.unique(raw_data[:, 0]))
-        ncols = nrows
+            unique_i_indices = np.unique(i_indices_vec)
+            unique_j_indices = np.unique(j_indices_vec)
 
-        contact_mat = np.zeros(shape = (nrows, ncols))
+            # Row indices should be 0 to n, where n = len(unique_i_indices) - 1
+            if not (unique_i_indices == np.arange(len(unique_i_indices))).all():
+                raise Exception("Non consecutive row indices for contact matrix.")
 
-        # Create the contact map.
-        for row in raw_data:
-            i_idx = int(row[0]) - 1
-            j_idx = int(row[1]) - 1
-            dist = row[4]
-            contact_mat[i_idx, j_idx] = dist
-            contact_mat[j_idx, i_idx] = dist
+            # Column indices should be 1 to n, where n = len(unique_j_indices)
+            if not ( unique_j_indices == (np.arange(len(unique_j_indices)) + 1) ).all():
+                raise Exception("Non consecutive column indices for contact matrix.")
 
-        contact_mat_csv_output_fname = os.path.join(args.csv_out_dir, os.path.basename(f).split('.')[0] + ".csv")
-        # Save the contact map in CSV format.
-        np.savetxt(contact_mat_csv_output_fname, contact_mat, delimiter=",", fmt="%.6f")
+            # We use +1 since the raw data indices are:
+            # i=0...n-1 and j=1...n, so we have n+1 indices in total
+            dim_size = len(np.unique(unique_i_indices)) + 1
+            contact_mat = np.zeros(shape = (dim_size, dim_size), dtype = np.float16)
+
+            # Create the contact map.
+            for line in lines:
+                vals = line.split(' ')
+                i_idx = int(vals[0])
+                j_idx = int(vals[1])
+                dist = float(vals[4])
+                contact_mat[i_idx, j_idx] = dist
+                contact_mat[j_idx, i_idx] = dist
+
+            # Sanity check to ensure the matrix is symmetric
+            if not (contact_mat.transpose() == contact_mat).all():
+                raise Exception("Contact matrix for " + f + " is not symmetric.")
+
+            contact_mat_csv_output_fname = os.path.join(args.csv_out_dir, os.path.basename(f).split('.')[0] + ".csv")
+            # Save the contact map in CSV format.
+            np.savetxt(contact_mat_csv_output_fname, contact_mat, delimiter=",", fmt="%.6f")
 
 
-        contact_mat_np_output_fname = os.path.join(args.np_out_dir, os.path.basename(f).split('.')[0] + ".npy")
-        # Save the contact map in numpy format.
-        np.save(contact_mat_np_output_fname, contact_mat)
+            contact_mat_np_output_fname = os.path.join(args.np_out_dir, os.path.basename(f).split('.')[0] + ".npy")
+            # Save the contact map in numpy format.
+            np.save(contact_mat_np_output_fname, contact_mat)
+
+        except KeyboardInterrupt:
+                raise
+        except:
+            print("ERROR: " + str(sys.exc_info()[1]))
 
 
 
