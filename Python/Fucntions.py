@@ -37,7 +37,7 @@ def calc_residue_dist(residue_one, residue_two):
 def model(pdb_filename):
     """returns the model of a pdb file"""
     pdb_code = pdb_filename[0:4]
-    structure = Bio.PDB.PDBParser().get_structure(pdb_code,'/cs/cbio/orzuk/projects/ContactMaps/data/pdb/'+pdb_filename)
+    structure = Bio.PDB.PDBParser().get_structure(pdb_code,pdb_filename)
     model = structure[0]
     return(model)
 
@@ -218,8 +218,305 @@ def PrtoteinFeatures(ProteinDataDict):
 
 
 
+def Sequence(pdb,chain,path):
+    from Bio.PDB.PDBParser import PDBParser
+    from Bio.PDB.Polypeptide import three_to_one
+    from Bio.PDB.Polypeptide import is_aa
+    from Bio.Alphabet import IUPAC
+    from Bio.Seq import Seq
+    from Bio.SeqRecord import SeqRecord
+    #path = '/cs/cbio/orzuk/projects/ContactMaps/data/pdb/'
+
+    ## First, open and parse the protein file
+    p = PDBParser(PERMISSIVE=1)
+    structure = p.get_structure(path+pdb+'.pdb',path+ pdb+'.pdb')
+    model = structure[0]
+    chain=model[chain]
+
+    ## Now go through the hierarchy of the PDB file
+    ##
+    ## 1- Structure
+    ##      2- Model
+    ##          3- Chains
+    ##              4- Residues
+    ##
+
+
+
+    seq = list()
+    chainID = chain.get_id()
+
+    for residue in chain:
+                ## The test below checks if the amino acid
+                ## is one of the 20 standard amino acids
+                ## Some proteins have "UNK" or "XXX", or other symbols
+                ## for missing or unknown residues
+        if is_aa(residue.get_resname(), standard=True):
+            seq.append(three_to_one(residue.get_resname()))
+        else:
+            seq.append("X")
+
+
+    myProt = Seq(str(''.join(seq)), IUPAC.protein)
+    #seqObj = SeqRecord(myProt, id=chainID, name="", description="")
+    return str(myProt)
+
+
+from os import listdir
+
+files = listdir('/cs/cbio/orzuk/projects/ContactMaps/data/pdb')
+path ='/cs/cbio/orzuk/projects/ContactMaps/data/pdb/'
+from Bio.PDB.PDBParser import PDBParser
+from Bio.PDB.Polypeptide import three_to_one
+from Bio.PDB.Polypeptide import is_aa
+from Bio.Alphabet import IUPAC
+from Bio.Seq import Seq
+p = PDBParser(PERMISSIVE=1)
+SequnecesDict={}
+count = 1.0
+k=1
+for pdb in files:
+    print(count)
+    try:
+        structure = p.get_structure(path+pdb,path+ pdb)
+        model = structure[0]
+        chains =[]
+
+        for i in model.child_list:
+            if str(i)[-2]!=' ':
+                chains.append(str(i)[-2])
+        for chain in chains:
+            SequnecesDict[pdb[:4]+chain] = Sequence(pdb[:4],chain,path).strip('X')
+        count+=1
+    except UnicodeDecodeError:
+        'pcik'
+
+
+    if count==k*100:
+        print(count/len(files))
+        k+=1
+
+##Generate phylogenetic tree
+from Bio.Alphabet import generic_dna
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from Bio.Align import MultipleSeqAlignment
+
+from Bio.Phylo.TreeConstruction import DistanceCalculator
+
+import numpy as np
+import pickle
+
+Data1 =  pickle.load(open('/cs/cbio/orzuk/projects/ContactMaps/data/MSATestProteins1.pkl','rb'),encoding = 'latin1')
+Y='PF03061.21'
+Align = np.load('/cs/cbio/orzuk/projects/ContactMaps/data/Pfam/alignments/%s'%Y)
+ind = [a =='ENTH_ECOLI/50-127' for a in Align.index]
+Align[ind]
+'''Take the alignment and tuen it to MultipleSeqAlignment object'''
+def MSAOBJ(Align):
+    calculator = DistanceCalculator('identity')
+
+    MSAlst = []
+    for indx  in Align.index:
+        ind = [a == indx for a in Align.index]
+        seq = Seq(list(Align[ind].iloc[0])[0])
+        MSAlst.append(SeqRecord(seq,id=indx))
+        align = MultipleSeqAlignment(MSAlst)
+        dm = calculator.get_distance(align)
+        return(align,dm)
+
+
+'''now for the tree'''
+from Bio.Phylo.TreeConstruction import DistanceCalculator
+
+path ='/cs/cbio/orzuk/projects/ContactMaps/data/pdb/'
+from Bio.PDB.PDBParser import PDBParser
+from Bio.PDB.Polypeptide import three_to_one
+from Bio.PDB.Polypeptide import is_aa
+from Bio.Alphabet import IUPAC
+from Bio.Seq import Seq
+from Bio.Align import MultipleSeqAlignment
+
+from Bio.SeqRecord import SeqRecord
+
+
+import numpy as np
+import pickle
+
+
+Data1 =  pickle.load(open('/cs/cbio/orzuk/projects/ContactMaps/data/MSATestProteins.pkl','rb'),encoding = 'latin1')
+Y='PF00036.31'
+Align = np.load('/cs/cbio/orzuk/projects/ContactMaps/data/Pfam/alignments/%s'%Y)
+ind = [a =='ENTH_ECOLI/50-127' for a in Align.index]
+Align[ind]
+Yprots =[]
+Uniprots = []
+for i in range(len(Data1[Y])):
+    Yprots.append([Data1[Y][i][2][:4]+'.pdb',Data1[Y][i][2][-1]])
+    Uniprots.append(Data1[Y][i][1])
+
+
+
+
+'''Starting with an alignment'''
+JAlign = open('/cs/cbio/orzuk/projects/ContactMaps/data/272871.a2m')
+#JAlign = open('272871.all_in_one/272871.a2m')
+
+MSA0 = JAlign.readlines()
+'''Next turn the line in to a sequence object'''
+MSA = []
+MSAList =[]
+count=1
+for seq in MSA0:
+    Seqlist = list(seq[:-1])
+    Seq1 = Seq(''.join(Seqlist))
+    Seqlist = [Seqlist[x] for x in range(len(Seqlist)) if (Seqlist[x] != '-' and Seqlist[x].upper()==Seqlist[x])]
+    SEQ = Seq(''.join(Seqlist))
+    MSA.append(SeqRecord(Seq1,id=str(count)))
+    MSAList.append(SEQ)
+    count+=1
+
+MSA = MultipleSeqAlignment(MSA)
+
+
+'''indices for the maps'''
+def AlignIndices(MSAline):
+    MSAline = list(MSAline)
+    Indices = [x for x in range(len(MSAline)) if (MSAline[x] != '-' and MSAline[x].upper()==MSAline[x])]
+    return(Indices)
+
+
+def TreeDistMat(AlignObject):
+    calculator = DistanceCalculator('identity')
+    dm = calculator.get_distance(AlignObject)
+
+    return(dm)
+
+def FindMaps(AlignObject,protein,pdblist):
+    dm =TreeDistMat(AlignObject)
+    mat = dm.matrix[protein]
+    MapsDict = {}
+    Distances =[]
+    for Protein in pdblist:
+        MapsDict[Protein] = #The protein's map
+        Distances.append(mat[protein,Protein])
+    PDBsDistance = pd.DataFrame({'Distance':Distances,"PDB'S":pdblist})
+    PDBsDistance = PDBsDistance.sort_values('Distance',1)
+    '''the '''
+    Outcontact.iloc[AlignIndices,AlignIndices]
 
 
 
 
 
+SequnecesDict=pickle.load(open('/cs/cbio/orzuk/projects/ContactMaps/data/SequnecesDict','rb'))
+
+for i in range(len(MSAList)):
+    if MSAList[i] in SequnecesDict.values():
+        print('pick')
+
+
+
+
+
+
+
+'''We need the sequences dict to match sequnece to proteins'''
+
+
+from Bio.Phylo.TreeConstruction import DistanceCalculator
+
+path ='/cs/cbio/orzuk/projects/ContactMaps/data/pdb/'
+from Bio.PDB.PDBParser import PDBParser
+from Bio.PDB.Polypeptide import three_to_one
+from Bio.PDB.Polypeptide import is_aa
+from Bio.Alphabet import IUPAC
+from Bio.Seq import Seq
+
+
+
+import numpy as np
+import pickle
+
+from Bio import SeqIO
+
+from os import listdir
+
+files = listdir('/cs/cbio/orzuk/projects/ContactMaps/data/pdb')
+files = [file for file in files if file.endswith('.pdb') ]
+p = PDBParser(PERMISSIVE=1)
+SequnecesDict={}
+count = 1.0
+k=1
+
+'''Sequences for pdbs'''
+for pdb in files:
+    try:
+
+        handle = open(path+pdb, "r")
+
+        for record in SeqIO.parse(handle, "pdb-seqres"):
+            SequnecesDict[record.id]=record.seq
+
+        count+=1
+    except UnicodeDecodeError:
+        'pick'
+
+
+    if count==k*round(len(files)/100.0):
+        print('%i precent completed'%k)
+        k+=1
+
+pickle.dump(SequnecesDict,open('/cs/cbio/orzuk/projects/ContactMaps/data/SequnecesDict','wb'))
+
+
+
+
+
+
+
+
+
+
+
+
+
+for indx  in Uniprots:
+    ind = [a == indx for a in Align.index]
+    lst = list(list(Align[ind].iloc[0])[0])
+    c = [lst[x] for x in range(len(lst)) if lst[x] != '-' and lst[x].upper()==lst[x]]
+    seq=''
+    for j in c:
+        seq+=j
+    seq = Seq(seq)
+
+
+'''parsing the pdb-uniprot dict'''
+import pandas as pd
+from Bio import SeqIO
+
+Lines=open('pdbtosp.txt').readlines()
+file =''
+def Prse(line):
+    Linelst = line.split(' ')
+    Linelst =list(filter(None, Linelst))
+    try:
+        Linelst.remove(',')
+    except ValueError:
+        'pick'
+    try:
+        Linelst[2] = Linelst[2] + Linelst[3]
+    except IndexError:
+        'pick'
+    String = ','.join(Linelst)
+    return (String)
+for line in Lines:
+    file=file+'\n'+Prse(line)
+PDBUnip =pd.read_csv("Output.txt",error_bad_lines=False)
+def matchpdbs(alignmentfile):
+    align=SeqIO.parse(alignmentfile,'stockholm')
+    Align = list(align)
+    names = []
+    for i in range(len(Align)):
+        names.append(Align[i].id.split('|'))
+    dat = pd.DataFrame(names)
